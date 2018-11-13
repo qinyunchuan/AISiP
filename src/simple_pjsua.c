@@ -39,6 +39,11 @@
  */
 
 #include <pjsua-lib/pjsua.h>
+#include <pjsua2/media.hpp>
+#include <pjsua2/endpoint.hpp>
+#include <pjmedia_audiodev.h>
+#include <iostream>
+using namespace pj;
 
 #define THIS_FILE	"APP"
 
@@ -46,7 +51,9 @@
 #define SIP_USER	"ff"
 #define SIP_PASSWD	"ff"
 
-
+pj::AudioMediaPlayer player;
+pj::AudioMediaRecorder recorder;
+pj::AudioMediaRecorder recorderVerify;
 /* Callback called by the library upon receiving incoming call */
 static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id,
 			     pjsip_rx_data *rdata)
@@ -85,12 +92,40 @@ static void on_call_media_state(pjsua_call_id call_id)
     pjsua_call_info ci;
 
     pjsua_call_get_info(call_id, &ci);
+#if 1 
 
     if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE) {
 	// When media is active, connect call to sound device.
 	pjsua_conf_connect(ci.conf_slot, 0);
 	pjsua_conf_connect(0, ci.conf_slot);
     }
+#else
+
+  try{
+        player.createPlayer("Ring02.wav", PJMEDIA_FILE_NO_LOOP);
+        recorder.createRecorder("in.wav");
+        recorderVerify.createRecorder("test.wav");
+        AudioMedia* aud_med = 0;
+        // Iterate all the call medias
+        for (unsigned i = 0; i < ci.media.size(); i++) {
+            std::cout << "Check audio " << i << std::endl;
+            if (ci.media[i].type==PJMEDIA_TYPE_AUDIO && getMedia(i)) {
+                  aud_med = static_cast<AudioMedia*>( getMedia(i));
+                  break;
+            }
+        }
+        if (aud_med != 0){
+             std::cout << "Send stuff to media" << std::endl;
+            // Connect the call audio media to sound device
+             AudDevManager& mgr = Endpoint::instance().audDevManager();
+             player.startTransmit(*aud_med);
+             aud_med->startTransmit(recorder);
+             player.startTransmit(recorderVerify);
+         }
+    } catch (Error& err) {
+             std::cout << "Error when playing: " << err.info() << std::endl;
+    }
+#endif
 }
 
 /* Display error and exit application */
