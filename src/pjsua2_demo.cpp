@@ -23,6 +23,7 @@
 #define THIS_FILE 	"pjsua2_demo.cpp"
 
 using namespace pj;
+using namespace std;
 
 class MyAccount;
 
@@ -30,6 +31,9 @@ class MyCall : public Call
 {
 private:
     MyAccount *myAcc;
+    AudioMediaPlayer player;
+    AudioMediaRecorder recorder;
+    AudioMediaRecorder recorderVerify;
 
 public:
     MyCall(Account &acc, int call_id = PJSUA_INVALID_ID)
@@ -39,6 +43,9 @@ public:
     }
     
     virtual void onCallState(OnCallStateParam &prm);
+    void onCallMediaState(OnCallMediaStateParam &prm);
+
+
 };
 
 class MyAccount : public Account
@@ -102,6 +109,39 @@ void MyCall::onCallState(OnCallStateParam &prm)
         myAcc->removeCall(this);
         /* Delete the call */
         delete this;
+    }
+}
+
+void MyCall::onCallMediaState(OnCallMediaStateParam &prm)
+{
+    cout << "!!!!!      onCallMediaState is called     !!!!!" << endl;
+
+    try{
+        player.createPlayer("Ring02.wav", PJMEDIA_FILE_NO_LOOP);
+        recorder.createRecorder("in.wav");
+        recorderVerify.createRecorder("test.wav");
+        CallInfo ci = getInfo();
+        AudioMedia* aud_med = 0;
+        // Iterate all the call medias
+        for (unsigned i = 0; i < ci.media.size(); i++) {
+            cout << "Check audio " << i << endl;
+            if (ci.media[i].type==PJMEDIA_TYPE_AUDIO && getMedia(i)) {
+                aud_med = static_cast<AudioMedia*>( getMedia(i));
+                break;
+            }
+        }
+        if (aud_med != 0){
+            cout << "Send stuff to media" << endl;
+
+            // Connect the call audio media to sound device
+            AudDevManager& mgr = Endpoint::instance().audDevManager();
+            player.startTransmit(*aud_med);
+            aud_med->startTransmit(recorder);
+            player.startTransmit(recorderVerify);
+        }
+
+    } catch (Error& err) {
+        cout << "Error when playing: " << err.info() << endl;
     }
 }
 
