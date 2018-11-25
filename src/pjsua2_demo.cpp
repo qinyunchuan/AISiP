@@ -40,6 +40,7 @@ public:
     : Call(acc, call_id)
     {
         myAcc = (MyAccount *)&acc;
+	recorder.createRecorder("in.wav");
     }
     
     virtual void onCallState(OnCallStateParam &prm);
@@ -52,9 +53,10 @@ class MyAccount : public Account
 {
 public:
     std::vector<Call *> calls;
+    bool active;
     
 public:
-    MyAccount()
+    MyAccount():active(true)
     {}
 
     ~MyAccount()
@@ -118,7 +120,7 @@ void MyCall::onCallMediaState(OnCallMediaStateParam &prm)
 
     try{
         player.createPlayer("Ring02.wav", PJMEDIA_FILE_NO_LOOP);
-        recorder.createRecorder("in.wav");
+        
         recorderVerify.createRecorder("test.wav");
         CallInfo ci = getInfo();
         AudioMedia* aud_med = 0;
@@ -145,7 +147,7 @@ void MyCall::onCallMediaState(OnCallMediaStateParam &prm)
     }
 }
 
-static void mainProg1(Endpoint &ep) throw(Error)
+static void mainProg(Endpoint &ep) throw(Error)
 {
     // Init library
     EpConfig ep_cfg;
@@ -165,12 +167,13 @@ static void mainProg1(Endpoint &ep) throw(Error)
     AccountConfig acc_cfg;
     acc_cfg.idUri = "sip:ff@192.168.3.99";
     acc_cfg.regConfig.registrarUri = "sip:192.168.3.99";
-    acc_cfg.sipConfig.authCreds.push_back( AuthCredInfo("digest", "*",
+    acc_cfg.sipConfig.authCreds.push_back( AuthCredInfo("digest", "asterisk",
                                                         "ff", 0, "ff") );
     MyAccount *acc(new MyAccount);
     acc->create(acc_cfg);
     
     pj_thread_sleep(2000);
+    while(!acc->active);
     
     // Make outgoing call
     Call *call = new MyCall(*acc);
@@ -178,202 +181,17 @@ static void mainProg1(Endpoint &ep) throw(Error)
     CallOpParam prm(true);
     prm.opt.audioCount = 1;
     prm.opt.videoCount = 0;
-    call->makeCall("tel:13700000000", prm);
+    call->makeCall("sip:18900000000@192.168.3.99", prm);
+    std::cout << "*** Start Calling ***" << std::endl;
     
-    // Hangup all calls
-    pj_thread_sleep(8000);
+    //Hangup all calls
+    pj_thread_sleep(80000);
     ep.hangupAllCalls();
     pj_thread_sleep(4000);
     
     // Destroy library
     std::cout << "*** PJSUA2 SHUTTING DOWN ***" << std::endl;
     delete call;
-    delete acc;
-}
-
-static void mainProg2() throw(Error)
-{
-    string json_str;
-    {
-	EpConfig epCfg;
-	JsonDocument jDoc;
-
-	epCfg.uaConfig.maxCalls = 61;
-	epCfg.uaConfig.userAgent = "Just JSON Test";
-	epCfg.uaConfig.stunServer.push_back("stun1.pjsip.org");
-	epCfg.uaConfig.stunServer.push_back("stun2.pjsip.org");
-	epCfg.logConfig.filename = "THE.LOG";
-
-	jDoc.writeObject(epCfg);
-	json_str = jDoc.saveString();
-	std::cout << json_str << std::endl << std::endl;
-    }
-
-    {
-	EpConfig epCfg;
-	JsonDocument rDoc;
-	string output;
-
-	rDoc.loadString(json_str);
-	rDoc.readObject(epCfg);
-
-	JsonDocument wDoc;
-
-	wDoc.writeObject(epCfg);
-	json_str = wDoc.saveString();
-	std::cout << json_str << std::endl << std::endl;
-
-	wDoc.saveFile("jsontest.js");
-    }
-
-    {
-	EpConfig epCfg;
-	JsonDocument rDoc;
-
-	rDoc.loadFile("jsontest.js");
-	rDoc.readObject(epCfg);
-	pj_file_delete("jsontest.js");
-    }
-}
-
-
-static void mainProg3(Endpoint &ep) throw(Error)
-{
-    const char *paths[] = { "../../../../tests/pjsua/wavs/input.16.wav",
-			    "../../tests/pjsua/wavs/input.16.wav",
-			    "input.16.wav"};
-    unsigned i;
-    const char *filename = NULL;
-
-    // Init library
-    EpConfig ep_cfg;
-    ep.libInit( ep_cfg );
-
-    for (i=0; i<PJ_ARRAY_SIZE(paths); ++i) {
-       if (pj_file_exists(paths[i])) {
-          filename = paths[i];
-          break;
-       }
-    }
-
-    if (!filename) {
-	PJSUA2_RAISE_ERROR3(PJ_ENOTFOUND, "mainProg3()",
-			   "Could not locate input.16.wav");
-    }
-
-    // Start library
-    ep.libStart();
-    std::cout << "*** PJSUA2 STARTED ***" << std::endl;
-
-    /* Use Null Audio Device as main media clock. This is useful for improving
-     * media clock (see also https://trac.pjsip.org/repos/wiki/FAQ#tx-timing)
-     * especially when sound device clock is jittery.
-     */
-    ep.audDevManager().setNullDev();
-
-    /* And install sound device using Extra Audio Device */
-    ExtraAudioDevice auddev2(-1, -1);
-    try {
-	auddev2.open();
-    } catch (...) {
-	std::cout << "Extra sound device failed" << std::endl;
-    }
-
-    // Create player and recorder
-    {
-	AudioMediaPlayer amp;
-	amp.createPlayer(filename);
-
-	AudioMediaRecorder amr;
-	amr.createRecorder("recorder_test_output.wav");
-
-	amp.startTransmit(amr);
-	if (auddev2.isOpened())
-	    amp.startTransmit(auddev2);
-
-	pj_thread_sleep(5000);
-    }
-}
-
-
-static void mainProg() throw(Error)
-{
-    string json_str;
-
-    {
-	JsonDocument jdoc;
-	AccountConfig accCfg;
-
-	accCfg.idUri = "\"Just Test\" <sip:test@pjsip.org>";
-	accCfg.regConfig.registrarUri = "sip:sip.pjsip.org";
-	SipHeader h;
-	h.hName = "X-Header";
-	h.hValue = "User header";
-	accCfg.regConfig.headers.push_back(h);
-
-	accCfg.sipConfig.proxies.push_back("<sip:sip.pjsip.org;transport=tcp>");
-	accCfg.sipConfig.proxies.push_back("<sip:sip.pjsip.org;transport=tls>");
-
-	accCfg.mediaConfig.transportConfig.tlsConfig.ciphers.push_back(1);
-	accCfg.mediaConfig.transportConfig.tlsConfig.ciphers.push_back(2);
-	accCfg.mediaConfig.transportConfig.tlsConfig.ciphers.push_back(3);
-
-	AuthCredInfo aci;
-	aci.scheme = "digest";
-	aci.username = "test";
-	aci.data = "passwd";
-	aci.realm = "*";
-	accCfg.sipConfig.authCreds.push_back(aci);
-
-	jdoc.writeObject(accCfg);
-	json_str = jdoc.saveString();
-	std::cout << "Original:" << std::endl;
-	std::cout << json_str << std::endl << std::endl;
-    }
-
-    {
-	JsonDocument rdoc;
-
-	rdoc.loadString(json_str);
-	AccountConfig accCfg;
-	rdoc.readObject(accCfg);
-
-	JsonDocument wdoc;
-	wdoc.writeObject(accCfg);
-	json_str = wdoc.saveString();
-
-	std::cout << "Parsed:" << std::endl;
-	std::cout << json_str << std::endl << std::endl;
-    }
-}
-
-
-static void mainProg4(Endpoint &ep) throw(Error)
-{
-    // Init library
-    EpConfig ep_cfg;
-    ep.libInit( ep_cfg );
-
-    // Create transport
-    TransportConfig tcfg;
-    tcfg.port = 5060;
-    ep.transportCreate(PJSIP_TRANSPORT_UDP, tcfg);
-    ep.transportCreate(PJSIP_TRANSPORT_TCP, tcfg);
-
-    // Add account
-    AccountConfig acc_cfg;
-    acc_cfg.idUri = "sip:localhost";
-    MyAccount *acc(new MyAccount);
-    acc->create(acc_cfg);
-
-    // Start library
-    ep.libStart();
-    std::cout << "*** PJSUA2 STARTED ***" << std::endl;
-
-    // Just wait for ENTER key
-    std::cout << "Press ENTER to quit..." << std::endl;
-    std::cin.get();
-
     delete acc;
 }
 
@@ -386,7 +204,7 @@ int main()
     try {
 	ep.libCreate();
 
-	mainProg1(ep);
+	mainProg(ep);
 	ret = PJ_SUCCESS;
     } catch (Error & err) {
 	std::cout << "Exception: " << err.info() << std::endl;
